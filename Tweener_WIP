@@ -16,22 +16,93 @@ def tween(percentage, obj=None, attrs=None, selection=True):
     
     
     for attr in attrs:
+        
         attrFull = '%s.%s' % (obj, attr)
-        #get the keyfranes of the attribute on the selected object
+        #get the keyfranes of the attribute on the selected object#
         keyFrames = cmds.keyframe(attrFull, query=True) 
         
         
-        #if there are no keyframes, then continue
+        #if there are no keyframes, then continue#
         if not keyFrames:
             continue
+                
+        previousKeyframes = []
+        for frame in keyFrames:
+            if frame < currentFrame: 
+                previousKeyframes.append(frame)        
             
-    previousKeyframes = []
-    for k in keyFrames:
+        laterKeyframes = [frame for frame in keyFrames if frame > currentFrame]    
         
-        if k < currentFrame:
-            previousKeyframes.append(k)        
+        if not previousKeyframes and not laterKeyframes:
+            continue 
+          
+        if previousKeyframes:
+            
+            previousFrameNumber = max(previousKeyframes) 
+            
+        else:
+            
+            previousFrameNumber = None
+            
+            
+        nextFrameNumber = min(laterKeyframes) if laterKeyframes else None 
         
-  
+        if not previousFrameNumber or not nextFrameNumber:
+            continue  
+            
+        previousValue = cmds.getAttr(attrFull, time = previousFrameNumber)
+        
+        nextValue = cmds.getAttr(attrFull, time = nextFrameNumber)
+        
+        
+        
+        difference = nextValue - previousValue
+        weightedDifference = (difference * percentage) / 100.0
+        
+        currentValue = previousValue + weightedDifference
+        
+        cmds.setKeyframe(attrFull, time = currentFrame, value = currentValue)
+        
+
+class TweenWindow(object):
+   
+    windowName = 'TweenerWindow'
+    
+    def show(self):
+        
+        if cmds.window(self.windowName, query = True, exists= True):
+            cmds.deleteUI(self.windowName)
+
+        cmds.window(self.windowName)
+        
+        self.buildUI()
+        
+        cmds.showWindow()
+            
+                 
+    def buildUI(self):
+        
+        column = cmds.columnLayout()
+        cmds.text(label='use this slider to set the tween amount')
+        
+        
+        row = cmds.rowLayout(numberOfColumns = 2)
+        self.slider = cmds.floatSlider(min=0, max=100, value=50, step=1, changeCommand=tween)
+        
+        cmds.button(label='Reset', command=self.reset)
+        
+        cmds.setParent(column)
+        cmds.button(label='Close', command=self.close)
+       
+    def reset(self, *args):
+        
+        cmds.floatSlider(self.slider, edit=True, value=50)  
+        
+        
+    def close(self, *args):
+        
+        cmds.deleteUI(self.windowName)    
 
 
-tween(50)    
+
+TweenWindow().show() 
