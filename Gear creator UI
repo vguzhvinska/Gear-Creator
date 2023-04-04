@@ -1,0 +1,225 @@
+from maya import cmds
+
+def tween(percentage, obj=None, attrs=None, selection=True):
+    if not obj and not selection:
+        raise ValueError ("No object was given to tween. Select object to continue")
+        
+    if not obj:
+        obj = cmds.ls(selection=True)[0]
+        
+        
+    if not attrs:
+        attrs=cmds.listAttr(obj, keyable=True)
+        
+        
+    currentFrame = cmds.currentTime(query=True) 
+    
+    
+    for attr in attrs:
+        
+        attrFull = '%s.%s' % (obj, attr)
+        #get the keyfranes of the attribute on the selected object#
+        keyFrames = cmds.keyframe(attrFull, query=True) 
+        
+        
+        #if there are no keyframes, then continue#
+        if not keyFrames:
+            continue
+                
+        previousKeyframes = []
+        for frame in keyFrames:
+            if frame < currentFrame: 
+                previousKeyframes.append(frame)        
+            
+        laterKeyframes = [frame for frame in keyFrames if frame > currentFrame]    
+        
+        if not previousKeyframes and not laterKeyframes:
+            continue 
+          
+        if previousKeyframes:
+            
+            previousFrameNumber = max(previousKeyframes) 
+            
+        else:
+            
+            previousFrameNumber = None
+            
+            
+        nextFrameNumber = min(laterKeyframes) if laterKeyframes else None 
+        
+        if not previousFrameNumber or not nextFrameNumber:
+            continue  
+            
+        previousValue = cmds.getAttr(attrFull, time = previousFrameNumber)
+        
+        nextValue = cmds.getAttr(attrFull, time = nextFrameNumber)
+        
+        
+        
+        difference = nextValue - previousValue
+        weightedDifference = (difference * percentage) / 100.0
+        
+        currentValue = previousValue + weightedDifference
+        
+        cmds.setKeyframe(attrFull, time = currentFrame, value = currentValue)
+        
+        
+        
+class Gear(object):
+    
+    
+    def __init__(self):
+        
+        ### The __init__ method lets us set the default values ###
+        
+        self.transform = None
+        self.extrude = None
+        self.constructor = None
+        
+    
+    def createGear(self, teeth=10, length=0.3):
+      
+        
+        spans = teeth * 2
+        
+        self.transform, self.constructor = cmds.polyPipe(subdivisionsAxis=spans)
+        sideFaces = range(spans*2, spans*3, 2)
+        
+        cmds.select(clear = True)
+        for face in sideFaces:
+            
+            cmds.select('%s.f[%s]' % (self.transform, face), add=True)
+            
+        self.extrude = cmds.polyExtrudeFacet(localTranslateZ=length)[0]
+        
+        cmds.select('%s' % (self.transform))
+            
+            
+    def changeTeeth(self, teeth=10, length=0.3):
+        
+        spans = teeth * 2
+        
+        cmds.polyPipe(self.constructor, edit=True, subdivisionsAxis = spans)
+        
+        sideFaces = range(spans * 2, spans * 3, 2)
+        faceNames = []
+        
+        
+        for face in sideFaces:
+            faceName = 'f[%s]' % (face)
+            faceNames.append(faceName)
+            
+        cmds.setAttr('%s.inputComponents'% (self.extrude), len(faceNames), *faceNames, type = "componentList") 
+        
+        cmds.polyExtrudeFacet(self.extrude, edit=True, ltz=length) 
+        
+        
+class BaseWindow(object):
+   
+    windowName = 'BaseWindow'
+    
+    def show(self):
+        
+        if cmds.window(self.windowName, query = True, exists= True):
+            cmds.deleteUI(self.windowName)
+
+        cmds.window(self.windowName)
+        
+        self.buildUI()
+        
+        cmds.showWindow()
+            
+                 
+    def buildUI(self):
+        pass
+        
+        
+    def reset(self, *args):  
+        pass
+        
+        
+    def close(self, *args):
+        
+        cmds.deleteUI(self.windowName)    
+
+
+class TweenerUI(BaseWindow):
+    
+    windowName='TweenerWindow'
+    
+    
+    def buildUI(self):
+        
+        column = cmds.columnLayout()
+        cmds.text(label='use this slider to set the tween amount')
+        
+        
+        row = cmds.rowLayout(numberOfColumns = 2)
+        self.slider = cmds.floatSlider(min=0, max=100, value=50, step=1, changeCommand=tween)
+        
+        cmds.button(label='Reset', command=self.reset)
+        
+        cmds.setParent(column)
+        cmds.button(label='Close', command=self.close)
+       
+    def reset(self, *args):
+        
+        cmds.floatSlider(self.slider, edit=True, value=50)  
+        
+class GearUI(BaseWindow):
+    
+    windowName = 'GearWindow'
+    
+    def __init__(self):
+        
+        self.gear = None
+        
+        
+    def buildUI(self):
+        
+        column = cmds.columnLayout()
+        cmds.text(label='use the slider to modify the gear')
+        
+        cmds.rowLayout(numberOfColumns = 4)
+        
+        self.label = cmds.text(label='10')
+        self.slider = cmds.intSlider(min=5, max=30, value=10, step=1, dragCommand=self.modifyGear) 
+        
+        cmds.button(label="Create Gear", command = self.createGear)
+        
+        cmds.button(label='Reset', command=self.reset)
+        
+        cmds.setParent(column)
+        
+        cmds.button(label='Close', command = self.close)
+        
+    def createGear(self, *args):
+        
+        teeth = cmds.intSlider(self.slider, query=True, value=True) 
+        
+        self.gear = Gear()
+        
+        self.gear.createGear(teeth = teeth)   
+        
+        
+    def modifyGear(self, teeth):
+        
+        if self.gear:
+            
+            self.gear.changeTeeth(teeth=teeth)
+            
+        cmds.text(self.label, edit=True, label=teeth)  
+        
+        
+    def reset(self, *args):
+        
+        self.gear = None
+        cmds.intSlider(self.slider, edit=True, value=10)
+        cmds.text(self.label, edit = True, label = 10)   
+               
+        
+        
+
+        
+        
+GearUI().show()
