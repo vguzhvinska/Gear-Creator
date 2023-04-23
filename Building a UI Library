@@ -1,0 +1,219 @@
+from maya import cmds
+import os
+import json
+import pprint
+from Qt import QtWidgets, QtCore, QtGui
+
+USERAPPDIR = cmds.internalVar(userAppDir = True)
+DIRECTORY = os.path.join(USERAPPDIR, 'controllerLibrary')
+
+def CreateDirectory(directory=DIRECTORY):
+    if not os.path.exists(directory):
+        os.mkdir(directory)
+
+CreateDirectory()
+
+class ControllerLibrary(dict):
+    def save(self, name, directory=DIRECTORY, screenshot = True, **info):
+       
+        
+        CreateDirectory(directory)
+        
+        path = os.path.join(directory, '%s.ma' % name)
+        infoFile = os.path.join(directory, '%s.json' % name)
+        
+        info['name'] = name
+        info['path'] = path
+        
+        cmds.file(rename = path)
+        
+        if cmds.ls(selection=True):
+            cmds.file(force=True, type='mayaAscii', exportSelected=True)
+        else:
+            cmds.file(save=True, type='mayaAscii', force=True)
+            
+        if screenshot:
+            info['screenshot'] = self.saveScreenshot(name, directory=directory)
+            
+        with open(infoFile, "w") as f:
+            json.dump(info, f, indent=4) 
+        
+        self[name] = info
+             
+                
+    def find(self, directory=DIRECTORY):
+        
+        
+        self.clear()
+        
+        if not os.path.exists(directory):
+            return
+        files = os.listdir(directory)
+        mayaFiles = [f for f in files if f.endswith('.ma')]
+        
+        for ma in mayaFiles:
+            name, ext = os.path.splitext(ma)
+            path = os.path.join(directory, ma)
+            
+            infoFile = '%s.json' % name
+            
+            if infoFile in files:
+                infoFile = os.path.join(directory, infoFile)
+                
+                
+                with open(infoFile, "r") as f:
+                    info = json.load(f)
+                    
+                
+            else:
+                info = {}
+                
+            screenshot = '%s.jpg' % name
+            
+            if screenshot in files:
+                info['screenshot'] = os.path.join(directory, name)
+                
+            info['name'] = name
+            info['path'] = path
+                
+            
+            
+            self[name] = info
+            
+      
+        
+    def load(self, name):
+        
+        path = self[name]['path']
+        cmds.file(path, i=True, usingNamespaces=False)
+        
+    def saveScreenshot(self, name, directory=DIRECTORY):
+        
+        path = os.path.join(directory, '%s.jpg' % name)
+        
+        cmds.viewFit()
+        cmds.setAttr('defaultRenderGlobals.imageFormat', 8)
+        
+        cmds.playblast(completeFilename=path, forceOverwrite=True, format='image', width=200, height=200, showOrnaments=False,startTime=1, endTime=1, viewer=False)
+        
+        return path
+
+class ControllerLibraryUI(QtWidgets.QDialog):
+    
+    
+   ### ControllerLibraryUI is a dialog that lets save and import the controllers ###
+    
+    def __init__(self):
+        super(ControllerLibraryUI, self).__init__()
+        
+        self.setWindowTitle('Controller Library UI')
+        self.library = ControllerLibrary()
+        self.buildUI() 
+        self.populate()
+        
+    def buildUI(self):
+        
+        #this is the master layout#
+        layoutBase = QtWidgets.QVBoxLayout(self)
+        
+        #this is the child horizontal widget#
+        saveWidget = QtWidgets.QWidget()
+        saveLayout = QtWidgets.QHBoxLayout(saveWidget)
+        layoutBase.addWidget(saveWidget)
+        
+        self.saveNameField = QtWidgets.QLineEdit()
+        saveLayout.addWidget(self.saveNameField)
+        
+        saveBtn = QtWidgets.QPushButton('save')
+        saveBtn.clicked.connect(self.save)
+        saveLayout.addWidget(saveBtn)
+        
+        #This are the parameters for our thumbnail size#
+        size = 64
+        buffer = 30
+        
+        #This will create a list widget to display our controller thumbnails#
+        self.listWidget = QtWidgets.QListWidget()
+        self.listWidget.setViewMode(QtWidgets.QListWidget.IconMode)
+        self.listWidget.setIconSize(QtCore.QSize(size, size))
+        self.listWidget.setResizeMode(QtWidgets.QListWidget.Adjust)
+        self.listWidget.setGridSize(QtCore.QSize(size+buffer, size+buffer))
+        layoutBase.addWidget(self.listWidget)
+        
+        #This is a child widget that holds all the buttons#
+        BtnWidget = QtWidgets.QWidget()
+        BtnLayout = QtWidgets.QHBoxLayout(BtnWidget)
+        layoutBase.addWidget(BtnWidget)
+        
+        importBtn = QtWidgets.QPushButton('Import')
+        importBtn.clicked.connect(self.load)
+        BtnLayout.addWidget(importBtn)
+        
+        refreshBtn = QtWidgets.QPushButton('Refresh')
+        refreshBtn.clicked.connect(self.populate)
+        BtnLayout.addWidget(refreshBtn)
+        
+        closeBtn = QtWidgets.QPushButton('Close')
+        closeBtn.clicked.connect(self.close)
+        BtnLayout.addWidget(closeBtn)
+        
+        
+    def load(self):
+        #This loads the currently selected controller#
+        currentItem = self.listWidget.currentItem()
+        if not currentItem:
+            return
+            
+            
+        name = currentItem.text()
+        self.library.load(name)
+        
+        
+    def populate(self):
+        self.listWidget.clear()
+        self.library.find()
+        
+        for name, info in self.library.items():
+           item = QtWidgets.QListWidgetItem(name)
+           self.listWidget.addItem(item)
+           
+           screenshot = info.get('screenshot')
+           
+           if screenshot:
+               icon = QtGui.QIcon(screenshot)
+               item.setIcon(icon)
+               
+               
+           item.setToolTip(pprint.pformat(info))
+               
+    def save(self):
+        #This saves the controller with the given file name#
+         name = self.saveNameField.text()
+         print "Name", name
+         if not name.strip():
+             cmds.warning('You must provide a name')
+             return
+             
+             
+         self.library.save(name)
+         self.populate()
+         self.saveNameField.setText('')
+        
+       
+      
+            
+        
+        
+def showUI():
+    
+    #
+    # This shows and returns a handle to the ui
+    # Returns:
+    #     QDialog
+    #    
+       
+    ui = ControllerLibraryUI()
+    ui.show()
+    return ui
+    
+ui = showUI()
